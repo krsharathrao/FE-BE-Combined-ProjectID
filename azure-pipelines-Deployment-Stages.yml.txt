@@ -1,0 +1,64 @@
+trigger:
+- none   # you can change this to 'main' if you want auto trigger
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+# ----------------
+# BUILD STAGE
+# ----------------
+- stage: Build
+  displayName: 'Build React App'
+  jobs:
+  - job: BuildJob
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+      displayName: 'Install Node.js'
+
+    - script: |
+        npm install
+        npm run build
+      displayName: 'npm install and build'
+
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: 'build'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/reactapp.zip'
+        replaceExistingArchive: true
+      displayName: 'Archive React build into zip'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/reactapp.zip'
+        ArtifactName: 'reactapp'
+        publishLocation: 'Container'
+      displayName: 'Publish React zip artifact'
+
+# ----------------
+# DEPLOY STAGE
+# ----------------
+- stage: Deploy
+  displayName: 'Deploy to Azure App Service'
+  dependsOn: Build
+  condition: succeeded()   # only run if build succeeded
+  jobs:
+  - deployment: DeployJob
+    displayName: 'Deploy React App'
+    environment: 'prod'   # <-- add approval here in Azure DevOps Environments
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: reactapp
+
+          - task: AzureWebApp@1
+            inputs:
+              azureSubscription: '<ServiceConnectionName>'
+              appName: '<AppServiceName>'
+              package: '$(Pipeline.Workspace)/reactapp/reactapp.zip'
